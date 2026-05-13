@@ -61,9 +61,15 @@ export default function Home() {
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/properties");
-    setProperties(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch("/api/properties");
+      const data = await res.json();
+      setProperties(Array.isArray(data) ? data : []);
+    } catch {
+      setProperties([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -116,9 +122,7 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen bg-slate-50" style={{ fontFamily: "var(--font-inter)" }}>
 
-      {/* ── Header ── */}
       <header className="bg-slate-900 text-white px-5 py-0 flex items-center gap-4 shrink-0 h-14 shadow-lg">
-        {/* Logo + name */}
         <div className="flex items-center gap-3">
           <BisLogo size={30} />
           <div className="leading-none">
@@ -127,10 +131,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Divider */}
         <div className="w-px h-7 bg-slate-700 ml-1" />
 
-        {/* Members */}
         <div className="flex items-center gap-2">
           {MEMBERS.map((m) => (
             <div key={m.name} className="flex items-center gap-1.5">
@@ -140,7 +142,6 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Stats */}
         <div className="flex items-center gap-2 ml-3">
           {stats.total > 0 && (
             <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded-full">
@@ -159,7 +160,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Add button */}
         <button
           onClick={() => setShowUpload(true)}
           className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors"
@@ -171,12 +171,8 @@ export default function Home() {
 
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ── Sidebar ── */}
         <aside className="w-[400px] shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-hidden shadow-sm">
-
-          {/* Controls bar */}
           <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/80 flex flex-col gap-2">
-            {/* Sort */}
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-slate-400 uppercase tracking-wide mr-1 shrink-0">Tri</span>
               {SORT_OPTIONS.map(({ key, label }) => (
@@ -193,7 +189,6 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            {/* Filter */}
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-slate-400 uppercase tracking-wide mr-1 shrink-0">Filtre</span>
               {FILTER_OPTIONS.map(({ key, label, dot }) => (
@@ -213,7 +208,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Card list */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {loading ? (
               <div className="flex flex-col gap-3">
@@ -223,7 +217,7 @@ export default function Home() {
               </div>
             ) : sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-16">
-                <div className="text-5xl mb-4">🏘️</div>
+                <div className="text-5xl mb-4">&#127960;</div>
                 <div className="font-semibold text-slate-700">
                   {properties.length === 0 ? "Aucun bien pour l'instant" : "Aucun bien dans ce filtre"}
                 </div>
@@ -247,12 +241,11 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* ── Map ── */}
         <main className="flex-1 relative">
           {properties.length === 0 && !loading ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50">
               <div className="text-center">
-                <div className="text-6xl mb-5">🗺️</div>
+                <div className="text-6xl mb-5">&#128506;</div>
                 <div className="font-semibold text-slate-600 text-lg">La carte apparaîtra ici</div>
                 <div className="text-slate-400 text-sm mt-1">
                   Ajoute ton premier bien pour voir les épingles
