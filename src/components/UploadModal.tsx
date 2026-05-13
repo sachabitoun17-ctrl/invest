@@ -18,7 +18,6 @@ interface BatchItem {
   status: BatchStatus;
   extracted?: ExtractedProperty;
   error?: string;
-  // editable fields
   price: string;
   surface: string;
   city: string;
@@ -113,7 +112,6 @@ export default function UploadModal({ onAdded, onClose }: Props) {
   async function handleFilesSelected(files: FileList) {
     const items = Array.from(files).map(makeItem);
     setBatch((prev) => [...prev, ...items]);
-    // Extract in parallel (max 3 at a time)
     const arr = Array.from(files);
     for (let i = 0; i < arr.length; i += 3) {
       await Promise.all(
@@ -193,13 +191,10 @@ export default function UploadModal({ onAdded, onClose }: Props) {
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────
-
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-slate-100">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="text-base font-bold text-slate-900">Ajouter des biens</h2>
@@ -216,17 +211,15 @@ export default function UploadModal({ onAdded, onClose }: Props) {
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-4">
-
-          {/* Input step — shown when no batch yet */}
           {batch.length === 0 && (
             <div className="space-y-4">
               <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
-                {(["pdf", "📄 PDF"], ["url", "🔗 URL"], ["text", "✍️ Texte"]] as unknown as [Mode, string][]).map(([m, label]) => (
+                {(["pdf", "url", "text"] as Mode[]).map((m) => (
                   <button key={m} onClick={() => setMode(m)}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                       mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}>
-                    {label}
+                    {m === "pdf" ? "PDF" : m === "url" ? "URL" : "Texte"}
                   </button>
                 ))}
               </div>
@@ -240,7 +233,7 @@ export default function UploadModal({ onAdded, onClose }: Props) {
                 >
                   <input ref={inputRef} type="file" accept=".pdf" multiple className="hidden"
                     onChange={(e) => e.target.files && handleFilesSelected(e.target.files)} />
-                  <div className="text-4xl mb-3">📤</div>
+                  <div className="text-4xl mb-3">&#128228;</div>
                   <div className="font-medium text-slate-600">Glisse ou clique pour choisir des PDFs</div>
                   <div className="text-xs text-slate-400 mt-1">Plusieurs fichiers acceptés — traitement simultané</div>
                 </div>
@@ -263,13 +256,11 @@ export default function UploadModal({ onAdded, onClose }: Props) {
             </div>
           )}
 
-          {/* Batch review */}
           {batch.length > 0 && (
             <div className="space-y-3">
               {batch.map((item) => (
                 <BatchCard key={item.id} item={item} onChange={(patch) => updateItem(item.id, patch)} />
               ))}
-              {/* Add more PDFs */}
               <button
                 onClick={() => inputRef.current?.click()}
                 className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
@@ -288,7 +279,6 @@ export default function UploadModal({ onAdded, onClose }: Props) {
           </div>
         )}
 
-        {/* Footer */}
         <div className="px-6 pb-5 pt-3 flex gap-2 shrink-0 border-t border-slate-100">
           <button onClick={onClose}
             className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 font-medium">
@@ -297,7 +287,7 @@ export default function UploadModal({ onAdded, onClose }: Props) {
           {batch.length === 0 && mode !== "pdf" && (
             <button onClick={handleSingleExtract}
               className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors">
-              Extraire les données →
+              Extraire les données
             </button>
           )}
           {batch.length > 0 && allDone && (
@@ -317,32 +307,27 @@ export default function UploadModal({ onAdded, onClose }: Props) {
   );
 }
 
-// ── Batch item card ────────────────────────────────────────────
-
 function BatchCard({ item, onChange }: { item: BatchItem; onChange: (p: Partial<BatchItem>) => void }) {
   const [expanded, setExpanded] = useState(false);
 
-  const statusIcon = item.status === "extracting" ? "⏳"
-    : item.status === "done" ? "✓"
-    : item.status === "error" ? "✗" : "·";
   const statusColor = item.status === "done" ? "text-emerald-600 bg-emerald-50"
     : item.status === "error" ? "text-red-500 bg-red-50"
     : item.status === "extracting" ? "text-amber-500 bg-amber-50"
     : "text-slate-400 bg-slate-100";
 
+  const statusLabel = item.status === "done" ? "✓" : item.status === "error" ? "✗" : item.status === "extracting" ? "⋯" : "·";
   const missingRequired = item.status === "done" && (!item.city || !item.price || !item.surface);
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${
       missingRequired ? "border-amber-300" : item.status === "error" ? "border-red-200" : "border-slate-200"
     }`}>
-      {/* Row header */}
       <div
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50"
         onClick={() => item.status === "done" && setExpanded((e) => !e)}
       >
         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${statusColor}`}>
-          {statusIcon}
+          {statusLabel}
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-slate-700 truncate">{item.fileName}</div>
@@ -361,7 +346,6 @@ function BatchCard({ item, onChange }: { item: BatchItem; onChange: (p: Partial<
         )}
       </div>
 
-      {/* Expanded edit form */}
       {expanded && item.status === "done" && (
         <div className="border-t border-slate-100 px-4 pb-4 pt-3 bg-slate-50/50">
           <div className="grid grid-cols-3 gap-2 text-xs">
