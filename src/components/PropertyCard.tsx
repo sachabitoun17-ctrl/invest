@@ -64,12 +64,31 @@ export default function PropertyCard({ property: p, selected, onSelect, onVote, 
       {/* ── Top row: address + score ── */}
       <div className="px-4 pt-3.5 pb-2 flex items-start gap-3">
         <div className="flex-1 min-w-0">
-          {p.type && (
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-              {p.type}
-              {p.floor != null ? ` · étage ${p.floor}` : ""}
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-1 mb-0.5">
+            {p.type && (
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                {p.type}{p.floor != null ? ` · ét.${p.floor}` : ""}
+              </span>
+            )}
+            {p.strategy && (
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${
+                p.strategy === "A" ? "bg-violet-100 text-violet-700"
+                : p.strategy === "B" ? "bg-blue-100 text-blue-700"
+                : "bg-indigo-100 text-indigo-700"
+              }`}>
+                Strat {p.strategy}
+              </span>
+            )}
+            {p.dpe && (
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${
+                p.dpe <= "B" ? "bg-emerald-100 text-emerald-700"
+                : p.dpe <= "D" ? "bg-amber-100 text-amber-700"
+                : "bg-red-100 text-red-700"
+              }`}>
+                DPE {p.dpe}
+              </span>
+            )}
+          </div>
           <div className="font-semibold text-slate-900 text-sm truncate leading-snug">
             {p.address || p.city}
           </div>
@@ -82,22 +101,35 @@ export default function PropertyCard({ property: p, selected, onSelect, onVote, 
 
       {/* ── Metrics grid ── */}
       <div className="px-4 pb-3 grid grid-cols-3 gap-2">
-        {[
-          { label: "Surface", value: `${p.surface} m²`, sub: p.rooms ? `${p.rooms} pièces` : undefined },
-          { label: "Prix", value: `${fmt(p.price)} €`, sub: `${fmt(m.pricePerM2)} €/m²` },
-          {
-            label: "Renta brute",
-            value: m.yieldMin ? `${m.yieldMin.toFixed(1)}%` : "—",
-            sub: m.yieldMax && m.yieldMax !== m.yieldMin ? `max ${m.yieldMax.toFixed(1)}%` : undefined,
-            highlight: m.yieldMin ? (m.yieldMin >= 7 ? "text-emerald-600" : m.yieldMin >= 5 ? "text-amber-600" : "text-slate-700") : "",
-          },
-        ].map(({ label, value, sub, highlight }) => (
-          <div key={label} className="bg-slate-50 rounded-lg px-2.5 py-2">
-            <div className="text-[10px] text-slate-400 mb-0.5">{label}</div>
-            <div className={`font-bold text-sm leading-tight ${highlight ?? "text-slate-800"}`}>{value}</div>
-            {sub && <div className="text-[10px] text-slate-400 mt-0.5">{sub}</div>}
+        <div className="bg-slate-50 rounded-lg px-2.5 py-2">
+          <div className="text-[10px] text-slate-400 mb-0.5">Surface</div>
+          <div className="font-bold text-sm leading-tight text-slate-800">{p.surface} m²</div>
+          {p.rooms && <div className="text-[10px] text-slate-400 mt-0.5">{p.rooms} pièces</div>}
+        </div>
+        <div className="bg-slate-50 rounded-lg px-2.5 py-2">
+          <div className="text-[10px] text-slate-400 mb-0.5">Prix</div>
+          <div className="font-bold text-sm leading-tight text-slate-800">{fmt(p.price)} €</div>
+          <div className="text-[10px] mt-0.5">
+            {m.discount != null ? (
+              <span className={m.discount >= 10 ? "text-emerald-600 font-semibold" : m.discount >= 0 ? "text-amber-600" : "text-red-500"}>
+                {m.discount >= 0 ? `-${m.discount}%` : `+${Math.abs(m.discount)}%`} marché
+              </span>
+            ) : (
+              <span className="text-slate-400">{fmt(m.pricePerM2)} €/m²</span>
+            )}
           </div>
-        ))}
+        </div>
+        <div className="bg-slate-50 rounded-lg px-2.5 py-2">
+          <div className="text-[10px] text-slate-400 mb-0.5">Renta brute</div>
+          <div className={`font-bold text-sm leading-tight ${
+            m.grossYield != null ? (m.grossYield >= 7 ? "text-emerald-600" : m.grossYield >= 5 ? "text-amber-600" : "text-slate-700") : "text-slate-400"
+          }`}>
+            {m.grossYield != null ? `${m.grossYield.toFixed(1)}%` : "—"}
+          </div>
+          {m.yieldMin != null && m.yieldMax != null && m.yieldMin !== m.yieldMax && (
+            <div className="text-[10px] text-slate-400 mt-0.5">{m.yieldMin.toFixed(1)}–{m.yieldMax.toFixed(1)}%</div>
+          )}
+        </div>
       </div>
 
       {/* ── Financials ── */}

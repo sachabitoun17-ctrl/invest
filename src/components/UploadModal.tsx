@@ -5,135 +5,208 @@ import { PropertyWithVotes } from "@/types/property";
 import { ExtractedProperty } from "@/lib/extract";
 
 interface Props {
-  onAdded: (p: PropertyWithVotes) => void;
+  onAdded: (properties: PropertyWithVotes[]) => void;
   onClose: () => void;
 }
 
-type Step = "input" | "review";
+type Mode = "pdf" | "url" | "text";
+type BatchStatus = "pending" | "extracting" | "done" | "error";
 
-interface FormData {
-  address: string; city: string; postalCode: string;
-  surface: string; rooms: string; floor: string; type: string;
-  price: string; notaryFees: string; renovMin: string; renovMax: string;
-  rentMin: string; rentMax: string; description: string;
+interface BatchItem {
+  id: string;
+  fileName: string;
+  status: BatchStatus;
+  extracted?: ExtractedProperty;
+  error?: string;
+  // editable fields
+  price: string;
+  surface: string;
+  city: string;
+  address: string;
+  rooms: string;
+  rentMin: string;
+  rentMax: string;
+  renovMin: string;
+  renovMax: string;
+  marketPriceM2: string;
+  strategy: string;
+  type: string;
+  postalCode: string;
+  floor: string;
+  dpe: string;
+  description: string;
 }
 
-function toForm(e: ExtractedProperty): FormData {
+function makeItem(file: File): BatchItem {
   return {
-    address: e.address ?? "", city: e.city ?? "", postalCode: e.postalCode ?? "",
-    surface: e.surface?.toString() ?? "", rooms: e.rooms?.toString() ?? "",
-    floor: e.floor?.toString() ?? "", type: e.type ?? "",
-    price: e.price?.toString() ?? "", notaryFees: e.notaryFees?.toString() ?? "",
-    renovMin: e.renovMin?.toString() ?? "", renovMax: e.renovMax?.toString() ?? "",
-    rentMin: e.rentMin?.toString() ?? "", rentMax: e.rentMax?.toString() ?? "",
+    id: Math.random().toString(36).slice(2),
+    fileName: file.name,
+    status: "pending",
+    price: "", surface: "", city: "", address: "", rooms: "",
+    rentMin: "", rentMax: "", renovMin: "", renovMax: "",
+    marketPriceM2: "", strategy: "B", type: "", postalCode: "",
+    floor: "", dpe: "", description: "",
+  };
+}
+
+function fillFromExtracted(item: BatchItem, e: ExtractedProperty): BatchItem {
+  return {
+    ...item,
+    status: "done",
+    extracted: e,
+    price: e.price?.toString() ?? "",
+    surface: e.surface?.toString() ?? "",
+    city: e.city ?? "",
+    address: e.address ?? "",
+    rooms: e.rooms?.toString() ?? "",
+    rentMin: e.rentMin?.toString() ?? "",
+    rentMax: e.rentMax?.toString() ?? "",
+    renovMin: e.renovMin?.toString() ?? "",
+    renovMax: e.renovMax?.toString() ?? "",
+    type: e.type ?? "",
+    postalCode: e.postalCode ?? "",
+    floor: e.floor?.toString() ?? "",
+    dpe: e.dpe ?? "",
     description: e.description ?? "",
   };
 }
 
-function empty(): FormData {
-  return { address:"",city:"",postalCode:"",surface:"",rooms:"",floor:"",type:"",
-    price:"",notaryFees:"",renovMin:"",renovMax:"",rentMin:"",rentMax:"",description:"" };
-}
-
-function Field({ label, name, value, onChange, type="text", placeholder }: {
-  label: string; name: keyof FormData; value: string;
-  onChange: (n: keyof FormData, v: string) => void;
-  type?: string; placeholder?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-[11px] font-medium text-slate-500 mb-1">{label}</label>
-      <input
-        type={type} value={value} placeholder={placeholder}
-        onChange={(e) => onChange(name, e.target.value)}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white"
-      />
-    </div>
-  );
-}
+const STRATEGY_OPTIONS = [
+  { value: "B", label: "B — Locatif" },
+  { value: "A", label: "A — Revente" },
+  { value: "AB", label: "A+B — Les deux" },
+];
 
 export default function UploadModal({ onAdded, onClose }: Props) {
-  const [mode, setMode] = useState<"pdf" | "text">("pdf");
-  const [step, setStep] = useState<Step>("input");
-  const [file, setFile] = useState<File | null>(null);
+  const [mode, setMode] = useState<Mode>("pdf");
+  const [urlValue, setUrlValue] = useState("");
   const [text, setText] = useState("");
-  const [pdfName, setPdfName] = useState<string | undefined>();
-  const [rawText, setRawText] = useState<string | undefined>();
-  const [showRaw, setShowRaw] = useState(false);
-  const [form, setForm] = useState<FormData>(empty());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [batch, setBatch] = useState<BatchItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function set(name: keyof FormData, value: string) {
-    setForm((prev) => ({ ...prev, [name]: value }));
+  const isBatchMode = mode === "pdf" && batch.length > 0;
+  const allDone = batch.length > 0 && batch.every((i) => i.status === "done" || i.status === "error");
+  const validItems = batch.filter((i) => i.status === "done");
+
+  function updateItem(id: string, patch: Partial<BatchItem>) {
+    setBatch((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   }
 
-  async function handleExtract() {
-    setError(null);
-    setLoading(true);
+  async function extractFile(file: File, id: string) {
+    updateItem(id, { status: "extracting" });
     try {
       const fd = new FormData();
-      if (mode === "pdf" && file) fd.append("file", file);
-      else if (mode === "text" && text.trim()) fd.append("text", text.trim());
-      else { setError(mode === "pdf" ? "Sélectionne un PDF" : "Colle le texte"); setLoading(false); return; }
-
+      fd.append("file", file);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).error ?? "Erreur");
-      const { extracted, pdfName: name } = await res.json();
-      setForm(toForm(extracted as ExtractedProperty));
-      setPdfName(name);
-      setRawText((extracted as ExtractedProperty).rawText);
-      setStep("review");
-    } catch (e) { setError(e instanceof Error ? e.message : "Erreur"); }
-    finally { setLoading(false); }
+      const { extracted } = await res.json();
+      setBatch((prev) =>
+        prev.map((i) => (i.id === id ? fillFromExtracted(i, extracted) : i))
+      );
+    } catch (e) {
+      updateItem(id, { status: "error", error: e instanceof Error ? e.message : "Erreur" });
+    }
   }
 
-  async function handleSave() {
-    setError(null);
-    if (!form.city) { setError("La ville est obligatoire"); return; }
-    const surface = parseFloat(form.surface);
-    const price = parseFloat(form.price.replace(/\s/g, ""));
-    if (!surface || !price) { setError("Surface et prix obligatoires"); return; }
+  async function handleFilesSelected(files: FileList) {
+    const items = Array.from(files).map(makeItem);
+    setBatch((prev) => [...prev, ...items]);
+    // Extract in parallel (max 3 at a time)
+    const arr = Array.from(files);
+    for (let i = 0; i < arr.length; i += 3) {
+      await Promise.all(
+        arr.slice(i, i + 3).map((f, j) => extractFile(f, items[i + j].id))
+      );
+    }
+  }
 
-    setLoading(true);
+  async function handleSingleExtract() {
+    setGlobalError(null);
+    const fd = new FormData();
+    if (mode === "url" && urlValue.trim()) {
+      fd.append("url", urlValue.trim());
+    } else if (mode === "text" && text.trim()) {
+      fd.append("text", text.trim());
+    } else {
+      setGlobalError(mode === "url" ? "Colle une URL" : "Colle le texte");
+      return;
+    }
+    const item: BatchItem = {
+      id: Math.random().toString(36).slice(2),
+      fileName: mode === "url" ? urlValue : "texte",
+      status: "extracting",
+      price: "", surface: "", city: "", address: "", rooms: "",
+      rentMin: "", rentMax: "", renovMin: "", renovMax: "",
+      marketPriceM2: "", strategy: "B", type: "", postalCode: "",
+      floor: "", dpe: "", description: "",
+    };
+    setBatch([item]);
     try {
-      const payload = {
-        address: form.address, city: form.city, postalCode: form.postalCode || undefined,
-        surface, rooms: form.rooms ? parseInt(form.rooms) : undefined,
-        floor: form.floor !== "" ? parseInt(form.floor) : undefined,
-        type: form.type || undefined, price,
-        notaryFees: form.notaryFees ? parseFloat(form.notaryFees.replace(/\s/g, "")) : undefined,
-        renovMin: form.renovMin ? parseFloat(form.renovMin.replace(/\s/g, "")) : undefined,
-        renovMax: form.renovMax ? parseFloat(form.renovMax.replace(/\s/g, "")) : undefined,
-        rentMin: form.rentMin ? parseFloat(form.rentMin.replace(/\s/g, "")) : undefined,
-        rentMax: form.rentMax ? parseFloat(form.rentMax.replace(/\s/g, "")) : undefined,
-        description: form.description || undefined, pdfName,
-      };
-      const fd = new FormData();
-      fd.append("data", JSON.stringify(payload));
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).error ?? "Erreur");
-      onAdded(await res.json());
+      const { extracted } = await res.json();
+      setBatch([fillFromExtracted(item, extracted)]);
+    } catch (e) {
+      setBatch([{ ...item, status: "error", error: e instanceof Error ? e.message : "Erreur" }]);
+    }
+  }
+
+  async function handleSaveAll() {
+    setSaving(true);
+    setGlobalError(null);
+    const saved: PropertyWithVotes[] = [];
+    for (const item of validItems) {
+      const surface = parseFloat(item.surface);
+      const price = parseFloat(item.price.replace(/\s/g, ""));
+      if (!item.city || !surface || !price) continue;
+      try {
+        const payload = {
+          address: item.address, city: item.city, postalCode: item.postalCode || undefined,
+          surface, price,
+          rooms: item.rooms ? parseInt(item.rooms) : undefined,
+          floor: item.floor !== "" ? parseInt(item.floor) : undefined,
+          type: item.type || undefined,
+          renovMin: item.renovMin ? parseFloat(item.renovMin.replace(/\s/g, "")) : undefined,
+          renovMax: item.renovMax ? parseFloat(item.renovMax.replace(/\s/g, "")) : undefined,
+          rentMin: item.rentMin ? parseFloat(item.rentMin.replace(/\s/g, "")) : undefined,
+          rentMax: item.rentMax ? parseFloat(item.rentMax.replace(/\s/g, "")) : undefined,
+          marketPriceM2: item.marketPriceM2 ? parseFloat(item.marketPriceM2) : undefined,
+          strategy: item.strategy || undefined,
+          dpe: item.dpe || undefined,
+          description: item.description || undefined,
+          pdfName: item.fileName,
+        };
+        const fd = new FormData();
+        fd.append("data", JSON.stringify(payload));
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        if (res.ok) saved.push(await res.json());
+      } catch { /* continue */ }
+    }
+    setSaving(false);
+    if (saved.length > 0) {
+      onAdded(saved);
       onClose();
-    } catch (e) { setError(e instanceof Error ? e.message : "Erreur"); }
-    finally { setLoading(false); }
+    } else {
+      setGlobalError("Aucun bien enregistré. Vérifie ville + prix + surface.");
+    }
   }
+
+  // ── Render ──────────────────────────────────────────────────────
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col border border-slate-100">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-slate-100">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
           <div>
-            <h2 className="text-base font-bold text-slate-900">
-              {step === "input" ? "Ajouter un bien" : "Vérifier les infos"}
-            </h2>
+            <h2 className="text-base font-bold text-slate-900">Ajouter des biens</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              {step === "input"
-                ? "Upload un PDF d'annonce ou colle le texte"
-                : "Corrige si besoin puis enregistre"}
+              {isBatchMode || batch.length > 0
+                ? `${batch.length} fichier${batch.length > 1 ? "s" : ""} — vérifie et complète les infos`
+                : "PDF (plusieurs à la fois), URL ou texte"}
             </p>
           </div>
           <button onClick={onClose}
@@ -144,147 +217,191 @@ export default function UploadModal({ onAdded, onClose }: Props) {
 
         <div className="overflow-y-auto flex-1 px-6 py-4">
 
-          {/* STEP 1 */}
-          {step === "input" && (
+          {/* Input step — shown when no batch yet */}
+          {batch.length === 0 && (
             <div className="space-y-4">
               <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
-                {(["pdf", "text"] as const).map((m) => (
+                {(["pdf", "📄 PDF"], ["url", "🔗 URL"], ["text", "✍️ Texte"]] as unknown as [Mode, string][]).map(([m, label]) => (
                   <button key={m} onClick={() => setMode(m)}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                       mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}>
-                    {m === "pdf" ? "📄 PDF" : "✍️ Texte"}
+                    {label}
                   </button>
                 ))}
               </div>
 
-              {mode === "pdf" ? (
-                <div onClick={() => inputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-                    file ? "border-blue-300 bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-slate-50"
-                  }`}>
-                  <input ref={inputRef} type="file" accept=".pdf" className="hidden"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                  {file ? (
-                    <div>
-                      <div className="text-3xl mb-2">📄</div>
-                      <div className="font-semibold text-slate-800">{file.name}</div>
-                      <div className="text-xs text-slate-400 mt-1">{(file.size / 1024).toFixed(0)} KB</div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="text-4xl mb-3">📤</div>
-                      <div className="font-medium text-slate-600">Clique pour choisir un PDF</div>
-                      <div className="text-xs text-slate-400 mt-1">Annonce SeLoger, LeBonCoin, PAP…</div>
-                    </div>
-                  )}
+              {mode === "pdf" && (
+                <div
+                  onClick={() => inputRef.current?.click()}
+                  onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) handleFilesSelected(e.dataTransfer.files); }}
+                  onDragOver={(e) => e.preventDefault()}
+                  className="border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-slate-50 rounded-xl p-10 text-center cursor-pointer transition-all"
+                >
+                  <input ref={inputRef} type="file" accept=".pdf" multiple className="hidden"
+                    onChange={(e) => e.target.files && handleFilesSelected(e.target.files)} />
+                  <div className="text-4xl mb-3">📤</div>
+                  <div className="font-medium text-slate-600">Glisse ou clique pour choisir des PDFs</div>
+                  <div className="text-xs text-slate-400 mt-1">Plusieurs fichiers acceptés — traitement simultané</div>
                 </div>
-              ) : (
+              )}
+
+              {mode === "url" && (
+                <div className="space-y-2">
+                  <input type="url" value={urlValue} onChange={(e) => setUrlValue(e.target.value)}
+                    placeholder="https://www.seloger.com/annonces/..."
+                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                  <p className="text-xs text-slate-400">SeLoger, LeBonCoin, PAP, Logic-Immo…</p>
+                </div>
+              )}
+
+              {mode === "text" && (
                 <textarea value={text} onChange={(e) => setText(e.target.value)}
-                  placeholder="Colle ici le texte de l'annonce immobilière…"
-                  className="w-full h-44 border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                  placeholder="Colle ici le texte de l'annonce…"
+                  className="w-full h-40 border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
               )}
             </div>
           )}
 
-          {/* STEP 2 */}
-          {step === "review" && (
-            <div className="space-y-5">
-              <div>
-                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-                  Localisation
-                </div>
-                <div className="space-y-2">
-                  <Field label="Adresse" name="address" value={form.address} onChange={set} placeholder="12 rue de la Paix" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label="Ville *" name="city" value={form.city} onChange={set} placeholder="Paris" />
-                    <Field label="Code postal" name="postalCode" value={form.postalCode} onChange={set} placeholder="75001" />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Bien</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Surface m² *" name="surface" value={form.surface} onChange={set} type="number" placeholder="65" />
-                  <Field label="Pièces" name="rooms" value={form.rooms} onChange={set} type="number" placeholder="3" />
-                  <Field label="Étage" name="floor" value={form.floor} onChange={set} type="number" placeholder="2" />
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Type</label>
-                    <select value={form.type} onChange={(e) => set("type", e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white">
-                      <option value="">—</option>
-                      <option value="appartement">Appartement</option>
-                      <option value="maison">Maison</option>
-                      <option value="studio">Studio</option>
-                      <option value="duplex">Duplex</option>
-                      <option value="loft">Loft</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Finances (€)</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Prix de vente *" name="price" value={form.price} onChange={set} placeholder="250000" />
-                  <Field label="Frais notaire" name="notaryFees" value={form.notaryFees} onChange={set} placeholder="auto 8%" />
-                  <Field label="Travaux min" name="renovMin" value={form.renovMin} onChange={set} placeholder="10000" />
-                  <Field label="Travaux max" name="renovMax" value={form.renovMax} onChange={set} placeholder="20000" />
-                  <Field label="Loyer min /mois" name="rentMin" value={form.rentMin} onChange={set} placeholder="800" />
-                  <Field label="Loyer max /mois" name="rentMax" value={form.rentMax} onChange={set} placeholder="950" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Description</label>
-                <textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-blue-400" />
-              </div>
-
-              {rawText && (
-                <div>
-                  <button onClick={() => setShowRaw((s) => !s)}
-                    className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2">
-                    {showRaw ? "Masquer" : "Voir"} le texte brut extrait
-                  </button>
-                  {showRaw && (
-                    <pre className="mt-2 text-xs bg-slate-50 rounded-lg p-3 overflow-auto max-h-28 whitespace-pre-wrap text-slate-500 border border-slate-100">
-                      {rawText}
-                    </pre>
-                  )}
-                </div>
-              )}
+          {/* Batch review */}
+          {batch.length > 0 && (
+            <div className="space-y-3">
+              {batch.map((item) => (
+                <BatchCard key={item.id} item={item} onChange={(patch) => updateItem(item.id, patch)} />
+              ))}
+              {/* Add more PDFs */}
+              <button
+                onClick={() => inputRef.current?.click()}
+                className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
+              >
+                + Ajouter d&apos;autres PDFs
+              </button>
+              <input ref={inputRef} type="file" accept=".pdf" multiple className="hidden"
+                onChange={(e) => e.target.files && handleFilesSelected(e.target.files)} />
             </div>
           )}
         </div>
 
-        {error && (
+        {globalError && (
           <div className="mx-6 mb-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 border border-red-100">
-            {error}
+            {globalError}
           </div>
         )}
 
         {/* Footer */}
         <div className="px-6 pb-5 pt-3 flex gap-2 shrink-0 border-t border-slate-100">
-          {step === "review" && (
-            <button onClick={() => { setStep("input"); setError(null); }}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 font-medium">
-              ← Retour
-            </button>
-          )}
           <button onClick={onClose}
             className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 font-medium">
             Annuler
           </button>
-          <button onClick={step === "input" ? handleExtract : handleSave} disabled={loading}
-            className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 transition-colors">
-            {loading
-              ? (step === "input" ? "Extraction…" : "Enregistrement…")
-              : (step === "input" ? "Extraire les données →" : "Enregistrer le bien")}
-          </button>
+          {batch.length === 0 && mode !== "pdf" && (
+            <button onClick={handleSingleExtract}
+              className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors">
+              Extraire les données →
+            </button>
+          )}
+          {batch.length > 0 && allDone && (
+            <button onClick={handleSaveAll} disabled={saving}
+              className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 transition-colors">
+              {saving ? "Enregistrement…" : `Enregistrer ${validItems.length} bien${validItems.length > 1 ? "s" : ""}`}
+            </button>
+          )}
+          {batch.length > 0 && !allDone && (
+            <div className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-400 text-sm font-medium text-center">
+              Extraction en cours…
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Batch item card ────────────────────────────────────────────
+
+function BatchCard({ item, onChange }: { item: BatchItem; onChange: (p: Partial<BatchItem>) => void }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const statusIcon = item.status === "extracting" ? "⏳"
+    : item.status === "done" ? "✓"
+    : item.status === "error" ? "✗" : "·";
+  const statusColor = item.status === "done" ? "text-emerald-600 bg-emerald-50"
+    : item.status === "error" ? "text-red-500 bg-red-50"
+    : item.status === "extracting" ? "text-amber-500 bg-amber-50"
+    : "text-slate-400 bg-slate-100";
+
+  const missingRequired = item.status === "done" && (!item.city || !item.price || !item.surface);
+
+  return (
+    <div className={`border rounded-xl overflow-hidden transition-all ${
+      missingRequired ? "border-amber-300" : item.status === "error" ? "border-red-200" : "border-slate-200"
+    }`}>
+      {/* Row header */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50"
+        onClick={() => item.status === "done" && setExpanded((e) => !e)}
+      >
+        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${statusColor}`}>
+          {statusIcon}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-slate-700 truncate">{item.fileName}</div>
+          {item.status === "done" && (
+            <div className="text-xs text-slate-400">
+              {[item.city, item.price ? `${item.price} €` : null, item.surface ? `${item.surface} m²` : null]
+                .filter(Boolean).join(" · ")}
+              {missingRequired && <span className="text-amber-600 ml-1">— champs manquants</span>}
+            </div>
+          )}
+          {item.status === "error" && <div className="text-xs text-red-500">{item.error}</div>}
+          {item.status === "extracting" && <div className="text-xs text-slate-400 animate-pulse">Extraction…</div>}
+        </div>
+        {item.status === "done" && (
+          <span className="text-xs text-slate-400 shrink-0">{expanded ? "▲" : "▼"}</span>
+        )}
+      </div>
+
+      {/* Expanded edit form */}
+      {expanded && item.status === "done" && (
+        <div className="border-t border-slate-100 px-4 pb-4 pt-3 bg-slate-50/50">
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <MiniField label="Ville *" value={item.city} onChange={(v) => onChange({ city: v })} placeholder="Paris" />
+            <MiniField label="Code postal" value={item.postalCode} onChange={(v) => onChange({ postalCode: v })} placeholder="75011" />
+            <MiniField label="Adresse" value={item.address} onChange={(v) => onChange({ address: v })} placeholder="12 rue..." />
+
+            <MiniField label="Surface m² *" value={item.surface} onChange={(v) => onChange({ surface: v })} type="number" />
+            <MiniField label="Prix * €" value={item.price} onChange={(v) => onChange({ price: v })} type="number" />
+            <MiniField label="Pièces" value={item.rooms} onChange={(v) => onChange({ rooms: v })} type="number" />
+
+            <MiniField label="Loyer min €/mo" value={item.rentMin} onChange={(v) => onChange({ rentMin: v })} type="number" />
+            <MiniField label="Loyer max €/mo" value={item.rentMax} onChange={(v) => onChange({ rentMax: v })} type="number" />
+            <MiniField label="Prix marché €/m²" value={item.marketPriceM2} onChange={(v) => onChange({ marketPriceM2: v })} type="number" placeholder="ex: 9500" />
+
+            <MiniField label="Travaux min €" value={item.renovMin} onChange={(v) => onChange({ renovMin: v })} type="number" />
+            <MiniField label="Travaux max €" value={item.renovMax} onChange={(v) => onChange({ renovMax: v })} type="number" />
+            <div>
+              <label className="block text-[10px] font-medium text-slate-400 mb-1 uppercase tracking-wide">Stratégie</label>
+              <select value={item.strategy} onChange={(e) => onChange({ strategy: e.target.value })}
+                className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-blue-400">
+                {STRATEGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniField({ label, value, onChange, type = "text", placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-[10px] font-medium text-slate-400 mb-1 uppercase tracking-wide">{label}</label>
+      <input type={type} value={value} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white" />
     </div>
   );
 }

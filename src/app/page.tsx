@@ -273,9 +273,9 @@ export default function Home() {
 
       {showUpload && (
         <UploadModal
-          onAdded={(p) => {
-            setProperties((prev) => [p, ...prev]);
-            setSelected(p.id);
+          onAdded={(newProps) => {
+            setProperties((prev) => [...newProps, ...prev]);
+            if (newProps.length > 0) setSelected(newProps[0].id);
           }}
           onClose={() => setShowUpload(false)}
         />
