@@ -7,7 +7,8 @@ export const runtime = "nodejs";
 export async function POST() {
   const existing = await prisma.property.count();
   if (existing > 0) {
-    return NextResponse.json({ seeded: false, message: "already has data" });
+    const properties = await prisma.property.findMany({ include: { votes: true } });
+    return NextResponse.json({ seeded: false, properties });
   }
 
   await prisma.property.createMany({
