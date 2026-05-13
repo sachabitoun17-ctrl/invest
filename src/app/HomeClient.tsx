@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import PropertyCard from "@/components/PropertyCard";
 import UploadModal from "@/components/UploadModal";
 import BisLogo from "@/components/BisLogo";
@@ -57,6 +58,7 @@ interface Props {
 }
 
 export default function HomeClient({ initialProperties }: Props) {
+  const router = useRouter();
   const [properties, setProperties] = useState<PropertyWithVotes[]>(initialProperties);
   const [selected, setSelected] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
@@ -64,6 +66,7 @@ export default function HomeClient({ initialProperties }: Props) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [mobileTab, setMobileTab] = useState<MobileTab>("list");
   const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const reload = useCallback(async () => {
@@ -76,11 +79,20 @@ export default function HomeClient({ initialProperties }: Props) {
 
   async function handleSeed() {
     setSeeding(true);
+    setSeedError(null);
     try {
       const res = await fetch("/api/seed", { method: "POST" });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
-      if (data.properties) setProperties(data.properties);
-    } catch { /* ignore */ }
+      if (data.properties?.length > 0) {
+        setProperties(data.properties);
+        router.refresh();
+      } else {
+        setSeedError("Aucun bien retourné. Recharge la page.");
+      }
+    } catch (e) {
+      setSeedError(e instanceof Error ? e.message : "Erreur inconnue");
+    }
     setSeeding(false);
   }
 
@@ -225,6 +237,9 @@ export default function HomeClient({ initialProperties }: Props) {
                   className="bg-slate-900 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                   {seeding ? "Chargement…" : "Voir 5 exemples"}
                 </button>
+                {seedError && (
+                  <div className="mt-2 text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{seedError}</div>
+                )}
                 <button onClick={() => setShowUpload(true)}
                   className="mt-2 text-sm text-slate-400 hover:text-slate-600 underline underline-offset-2">
                   + Ajouter un vrai bien
