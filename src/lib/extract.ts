@@ -34,17 +34,20 @@ export function extractFromText(text: string): ExtractedProperty {
   const t = text;
 
   // --- Price ---
-  // "250 000 €", "250.000€", "Prix : 180000€", "Vendu 95 000 €"
-  // "Prix :215 000 €" (no space after colon), "375.000 euros" (word euros)
+  // Strip "Ref : XXXX" patterns first so ref numbers don't bleed into price
+  const tClean = t.replace(/r[eé]f(?:[eé]rence)?\s*[:\-]?\s*\d[\d\s]*/gi, "");
+
   const priceRaw = first(
-    t,
+    tClean,
     /(?:prix[^0-9]{0,20}|vendu\s+|à\s+)([\d][\d\s.]+)\s*€/i,
     /([\d][\d\s.]{4,})\s*€\s*(?:FAI|HD|HN|net|vendeur)/i,
     /(?:prix[^0-9]{0,20})([\d][\d\s.]+)\s*euros/i,
     /([\d][\d\s.]{4,})\s*euros/i,
     /([\d][\d\s.]{4,})\s*€/
   );
-  const price = priceRaw ? parseNum(priceRaw) : undefined;
+  const priceRaw2 = priceRaw ? parseNum(priceRaw) : undefined;
+  // Sanity check: prices must be between 10k and 20M€
+  const price = priceRaw2 && priceRaw2 >= 10_000 && priceRaw2 <= 20_000_000 ? priceRaw2 : undefined;
 
   // --- Surface ---
   // "Surface habitable36.12 m²" or "Surface17.76 m2" (no space between label and value)

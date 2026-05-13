@@ -317,10 +317,12 @@ function BatchCard({ item, onChange }: { item: BatchItem; onChange: (p: Partial<
 
   const statusLabel = item.status === "done" ? "✓" : item.status === "error" ? "✗" : item.status === "extracting" ? "⋯" : "·";
   const missingRequired = item.status === "done" && (!item.city || !item.price || !item.surface);
+  const priceNum = parseFloat(item.price.replace(/\s/g, ""));
+  const priceOutOfRange = item.status === "done" && item.price && (priceNum < 100_000 || priceNum > 800_000);
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${
-      missingRequired ? "border-amber-300" : item.status === "error" ? "border-red-200" : "border-slate-200"
+      missingRequired ? "border-amber-300" : item.status === "error" ? "border-red-200" : priceOutOfRange ? "border-orange-300" : "border-slate-200"
     }`}>
       <div
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50"
@@ -336,6 +338,7 @@ function BatchCard({ item, onChange }: { item: BatchItem; onChange: (p: Partial<
               {[item.city, item.price ? `${item.price} €` : null, item.surface ? `${item.surface} m²` : null]
                 .filter(Boolean).join(" · ")}
               {missingRequired && <span className="text-amber-600 ml-1">— champs manquants</span>}
+              {priceOutOfRange && <span className="text-orange-500 ml-1">— prix hors budget (100k–800k€)</span>}
             </div>
           )}
           {item.status === "error" && <div className="text-xs text-red-500">{item.error}</div>}
