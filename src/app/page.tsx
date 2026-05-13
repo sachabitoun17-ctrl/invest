@@ -4,34 +4,28 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import PropertyCard from "@/components/PropertyCard";
 import UploadModal from "@/components/UploadModal";
+import BisLogo from "@/components/BisLogo";
 import { PropertyWithVotes, computeMetrics, User } from "@/types/property";
 
 const Map = dynamic(() => import("@/components/Map"), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-full bg-gray-50 text-gray-400">
-      Chargement de la carte…
+    <div className="flex items-center justify-center h-full bg-slate-50">
+      <div className="text-slate-400 text-sm">Chargement de la carte…</div>
     </div>
   ),
 });
 
 type SortKey = "score" | "yield" | "price" | "surface" | "date";
+type FilterKey = "all" | "yes" | "no" | "undecided";
 
-function sortProperties(
-  props: PropertyWithVotes[],
-  key: SortKey
-): PropertyWithVotes[] {
+function sortProperties(props: PropertyWithVotes[], key: SortKey) {
   return [...props].sort((a, b) => {
-    if (key === "date")
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (key === "date") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     if (key === "price") return a.price - b.price;
     if (key === "surface") return b.surface - a.surface;
     if (key === "score") return computeMetrics(b).score - computeMetrics(a).score;
-    if (key === "yield") {
-      const ya = computeMetrics(a).yieldMin ?? 0;
-      const yb = computeMetrics(b).yieldMin ?? 0;
-      return yb - ya;
-    }
+    if (key === "yield") return (computeMetrics(b).yieldMin ?? 0) - (computeMetrics(a).yieldMin ?? 0);
     return 0;
   });
 }
@@ -44,48 +38,44 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "date", label: "Date" },
 ];
 
+const FILTER_OPTIONS: { key: FilterKey; label: string; dot?: string }[] = [
+  { key: "all", label: "Tous" },
+  { key: "yes", label: "Likés", dot: "bg-emerald-400" },
+  { key: "undecided", label: "En attente", dot: "bg-amber-400" },
+  { key: "no", label: "Rejetés", dot: "bg-red-400" },
+];
+
+const MEMBERS = [
+  { name: "Sacha", color: "bg-blue-500" },
+  { name: "Ilanna", color: "bg-pink-500" },
+  { name: "Benjamin", color: "bg-violet-500" },
+];
+
 export default function Home() {
   const [properties, setProperties] = useState<PropertyWithVotes[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [sort, setSort] = useState<SortKey>("score");
-  const [filter, setFilter] = useState<"all" | "yes" | "no" | "undecided">("all");
+  const [filter, setFilter] = useState<FilterKey>("all");
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = useCallback(async () => {
     const res = await fetch("/api/properties");
-    const data = await res.json();
-    setProperties(data);
+    setProperties(await res.json());
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  async function handleVote(
-    propertyId: string,
-    user: User,
-    value: "yes" | "no" | "maybe"
-  ) {
-    const existing = properties
-      .find((p) => p.id === propertyId)
-      ?.votes.find((v) => v.user === user);
-
-    if (existing?.value === value) {
-      await fetch(`/api/properties/${propertyId}/vote`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user }),
-      });
-    } else {
-      await fetch(`/api/properties/${propertyId}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user, value }),
-      });
-    }
+  async function handleVote(propertyId: string, user: User, value: "yes" | "no" | "maybe") {
+    const existing = properties.find((p) => p.id === propertyId)?.votes.find((v) => v.user === user);
+    const method = existing?.value === value ? "DELETE" : "POST";
+    await fetch(`/api/properties/${propertyId}/vote`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user, value }),
+    });
     await load();
   }
 
@@ -105,11 +95,11 @@ export default function Home() {
 
   const filtered = properties.filter((p) => {
     if (filter === "all") return true;
-    const yesVotes = p.votes.filter((v) => v.value === "yes").length;
-    const noVotes = p.votes.filter((v) => v.value === "no").length;
-    if (filter === "yes") return yesVotes >= 2;
-    if (filter === "no") return noVotes >= 2;
-    if (filter === "undecided") return yesVotes < 2 && noVotes < 2;
+    const yes = p.votes.filter((v) => v.value === "yes").length;
+    const no = p.votes.filter((v) => v.value === "no").length;
+    if (filter === "yes") return yes >= 2;
+    if (filter === "no") return no >= 2;
+    if (filter === "undecided") return yes < 2 && no < 2;
     return true;
   });
 
@@ -117,125 +107,133 @@ export default function Home() {
 
   const stats = {
     total: properties.length,
-    avgScore:
-      properties.length > 0
-        ? Math.round(
-            properties.reduce((s, p) => s + computeMetrics(p).score, 0) /
-              properties.length
-          )
-        : 0,
-    liked: properties.filter(
-      (p) => p.votes.filter((v) => v.value === "yes").length >= 2
-    ).length,
+    liked: properties.filter((p) => p.votes.filter((v) => v.value === "yes").length >= 2).length,
+    avgScore: properties.length
+      ? Math.round(properties.reduce((s, p) => s + computeMetrics(p).score, 0) / properties.length)
+      : null,
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Top bar */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4 shrink-0 z-10">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🏠</span>
-          <div>
-            <span className="font-bold text-gray-900">BIS Invest</span>
-            <span className="text-xs text-gray-400 ml-2">
-              Sacha · Ilanna · Benjamin
-            </span>
+    <div className="flex flex-col h-screen bg-slate-50" style={{ fontFamily: "var(--font-inter)" }}>
+
+      {/* ── Header ── */}
+      <header className="bg-slate-900 text-white px-5 py-0 flex items-center gap-4 shrink-0 h-14 shadow-lg">
+        {/* Logo + name */}
+        <div className="flex items-center gap-3">
+          <BisLogo size={30} />
+          <div className="leading-none">
+            <div className="font-bold text-base tracking-tight">BIS Project</div>
+            <div className="text-slate-400 text-[10px] tracking-widest uppercase">Investissement</div>
           </div>
         </div>
 
-        <div className="flex gap-2 text-xs text-gray-500 ml-4">
-          <span className="bg-gray-100 rounded-full px-2 py-1">
-            <b className="text-gray-800">{stats.total}</b> biens
-          </span>
-          {stats.liked > 0 && (
-            <span className="bg-green-50 text-green-700 rounded-full px-2 py-1">
-              <b>{stats.liked}</b> likés
+        {/* Divider */}
+        <div className="w-px h-7 bg-slate-700 ml-1" />
+
+        {/* Members */}
+        <div className="flex items-center gap-2">
+          {MEMBERS.map((m) => (
+            <div key={m.name} className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${m.color}`} />
+              <span className="text-slate-300 text-xs">{m.name}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Stats */}
+        <div className="flex items-center gap-2 ml-3">
+          {stats.total > 0 && (
+            <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded-full">
+              <b className="text-white">{stats.total}</b> biens
             </span>
           )}
-          {stats.avgScore > 0 && (
-            <span className="bg-blue-50 text-blue-700 rounded-full px-2 py-1">
-              Score moyen <b>{stats.avgScore}</b>
+          {stats.liked > 0 && (
+            <span className="bg-emerald-900/60 text-emerald-400 text-xs px-2.5 py-1 rounded-full">
+              ✓ <b>{stats.liked}</b> likés
+            </span>
+          )}
+          {stats.avgScore !== null && (
+            <span className="bg-blue-900/60 text-blue-400 text-xs px-2.5 py-1 rounded-full">
+              Score moy. <b>{stats.avgScore}</b>
             </span>
           )}
         </div>
 
-        <div className="ml-auto">
-          <button
-            onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
-          >
-            <span className="text-lg leading-none">+</span>
-            <span>Ajouter un bien</span>
-          </button>
-        </div>
+        {/* Add button */}
+        <button
+          onClick={() => setShowUpload(true)}
+          className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors"
+        >
+          <span className="text-base leading-none">+</span>
+          Ajouter un bien
+        </button>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left sidebar: list */}
-        <aside className="w-[400px] shrink-0 flex flex-col border-r border-gray-200 bg-white overflow-hidden">
-          {/* Controls */}
-          <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap items-center gap-2">
-            <div className="flex gap-1">
+
+        {/* ── Sidebar ── */}
+        <aside className="w-[400px] shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-hidden shadow-sm">
+
+          {/* Controls bar */}
+          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/80 flex flex-col gap-2">
+            {/* Sort */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wide mr-1 shrink-0">Tri</span>
               {SORT_OPTIONS.map(({ key, label }) => (
                 <button
                   key={key}
                   onClick={() => setSort(key)}
-                  className={`text-xs px-2 py-1 rounded-md transition-colors ${
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${
                     sort === key
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-500 hover:bg-slate-200"
                   }`}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <div className="flex gap-1">
-              {(["all", "yes", "no", "undecided"] as const).map((f) => (
+            {/* Filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wide mr-1 shrink-0">Filtre</span>
+              {FILTER_OPTIONS.map(({ key, label, dot }) => (
                 <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`text-xs px-2 py-1 rounded-md transition-colors ${
-                    filter === f
-                      ? "bg-gray-700 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-md font-medium transition-all ${
+                    filter === key
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-500 hover:bg-slate-200"
                   }`}
                 >
-                  {f === "all"
-                    ? "Tous"
-                    : f === "yes"
-                    ? "✓ Likés"
-                    : f === "no"
-                    ? "✗ Rejetés"
-                    : "? En attente"}
+                  {dot && <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />}
+                  {label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Cards */}
+          {/* Card list */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {loading ? (
-              <div className="text-center text-gray-400 mt-12 text-sm">
-                Chargement…
+              <div className="flex flex-col gap-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-52 rounded-xl bg-slate-100 animate-pulse" />
+                ))}
               </div>
             ) : sorted.length === 0 ? (
-              <div className="text-center mt-12">
-                <div className="text-4xl mb-3">🏘️</div>
-                <div className="text-gray-500 text-sm">
-                  {properties.length === 0
-                    ? "Aucun bien ajouté. Commence par uploader un PDF !"
-                    : "Aucun bien dans ce filtre."}
+              <div className="flex flex-col items-center justify-center h-full text-center py-16">
+                <div className="text-5xl mb-4">🏘️</div>
+                <div className="font-semibold text-slate-700">
+                  {properties.length === 0 ? "Aucun bien pour l'instant" : "Aucun bien dans ce filtre"}
+                </div>
+                <div className="text-sm text-slate-400 mt-1">
+                  {properties.length === 0 && "Commence par ajouter un bien via le bouton en haut"}
                 </div>
               </div>
             ) : (
               sorted.map((p) => (
-                <div
-                  key={p.id}
-                  ref={(el) => {
-                    cardRefs.current[p.id] = el;
-                  }}
-                >
+                <div key={p.id} ref={(el) => { cardRefs.current[p.id] = el; }}>
                   <PropertyCard
                     property={p}
                     selected={selected === p.id}
@@ -249,24 +247,26 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* Right: map */}
+        {/* ── Map ── */}
         <main className="flex-1 relative">
           {properties.length === 0 && !loading ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
-              <div className="text-5xl mb-4">🗺️</div>
-              <div className="text-lg font-medium">
-                La carte s&apos;affichera ici
-              </div>
-              <div className="text-sm mt-1">
-                Ajoute ton premier bien pour voir les épingles
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50">
+              <div className="text-center">
+                <div className="text-6xl mb-5">🗺️</div>
+                <div className="font-semibold text-slate-600 text-lg">La carte apparaîtra ici</div>
+                <div className="text-slate-400 text-sm mt-1">
+                  Ajoute ton premier bien pour voir les épingles
+                </div>
+                <button
+                  onClick={() => setShowUpload(true)}
+                  className="mt-5 bg-slate-900 hover:bg-slate-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"
+                >
+                  + Ajouter un bien
+                </button>
               </div>
             </div>
           ) : (
-            <Map
-              properties={properties}
-              selected={selected}
-              onSelect={handleSelect}
-            />
+            <Map properties={properties} selected={selected} onSelect={handleSelect} />
           )}
         </main>
       </div>
