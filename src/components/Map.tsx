@@ -65,8 +65,8 @@ export default function Map({ properties, selected, onSelect }: Props) {
 
   return (
     <MapContainer
-      center={[46.8, 2.3]}
-      zoom={6}
+      center={[48.8566, 2.3522]}
+      zoom={11}
       style={{ height: "100%", width: "100%" }}
     >
       <TileLayer
