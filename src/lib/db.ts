@@ -3,9 +3,8 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import { neonConfig, Pool } from "@neondatabase/serverless";
 import ws from "ws";
 
-if (process.env.NODE_ENV !== "production") {
-  neonConfig.webSocketConstructor = ws;
-}
+neonConfig.webSocketConstructor = ws;
+neonConfig.fetchConnectionCache = true;
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
@@ -17,6 +16,5 @@ function createClient() {
   return new PrismaClient({ adapter });
 }
 
-export const prisma = globalForPrisma.prisma || createClient();
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+export const prisma = globalForPrisma.prisma ?? createClient();
+globalForPrisma.prisma = prisma;
