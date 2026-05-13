@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/root/.claude/check-vercel-deploy.sh",
+            "timeout": 15,
+            "statusMessage": "Verification du deploy Vercel..."
+          }
+        ]
+      }
+    ]
+  }
+}
