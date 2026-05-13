@@ -32,6 +32,12 @@ model Property {
   rentMin     Float?
   rentMax     Float?
 
+  // Strategy & market reference
+  strategy      String?  // "A" | "B" | "AB"
+  marketPriceM2 Float?   // prix marché €/m² du quartier (référence décote)
+  dpe           String?  // "A".."G"
+  transport     String?  // description accès transports
+
   // Metadata
   description String?
   pdfName     String?
