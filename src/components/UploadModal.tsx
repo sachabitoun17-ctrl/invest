@@ -192,7 +192,7 @@ export default function UploadModal({ onAdded, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-black/50 z-[1001] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-slate-100">
 
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
