@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Property {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Location
+  address     String
+  city        String
+  postalCode  String?
+  lat         Float?
+  lng         Float?
+
+  // Property details
+  surface     Float
+  rooms       Int?
+  floor       Int?
+  type        String?
+
+  // Financials (euros)
+  price       Float
+  notaryFees  Float?
+  renovMin    Float?
+  renovMax    Float?
+  rentMin     Float?
+  rentMax     Float?
+
+  // Metadata
+  description String?
+  pdfName     String?
+  sourceText  String?
+
+  votes       Vote[]
+}
+
+model Vote {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  user       String
+  value      String
+  comment    String?
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([user, propertyId])
+}
