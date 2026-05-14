@@ -7,6 +7,7 @@ import PropertyCard from "@/components/PropertyCard";
 import UploadModal from "@/components/UploadModal";
 import BisLogo from "@/components/BisLogo";
 import { PropertyWithVotes, computeMetrics, User } from "@/types/property";
+import WelcomePath from "@/components/WelcomePath";
 
 const Map = dynamic(() => import("@/components/Map"), {
   ssr: false,
@@ -67,6 +68,7 @@ export default function HomeClient({ initialProperties }: Props) {
   const [mobileTab, setMobileTab] = useState<MobileTab>("list");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [votingId, setVotingId] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const reload = useCallback(async () => {
@@ -97,21 +99,29 @@ export default function HomeClient({ initialProperties }: Props) {
   }
 
   async function handleVote(propertyId: string, user: User, value: "yes" | "no" | "maybe") {
-    const existing = properties.find((p) => p.id === propertyId)?.votes.find((v) => v.user === user);
-    const method = existing?.value === value ? "DELETE" : "POST";
-    await fetch(`/api/properties/${propertyId}/vote`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user, value }),
-    });
-    await reload();
+    if (votingId) return;
+    setVotingId(propertyId);
+    try {
+      const existing = properties.find((p) => p.id === propertyId)?.votes.find((v) => v.user === user);
+      const method = existing?.value === value ? "DELETE" : "POST";
+      const res = await fetch(`/api/properties/${propertyId}/vote`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user, value }),
+      });
+      if (res.ok) await reload();
+    } catch { /* ignore */ } finally {
+      setVotingId(null);
+    }
   }
 
   async function handleDelete(id: string) {
     if (!confirm("Supprimer ce bien ?")) return;
-    await fetch(`/api/properties/${id}`, { method: "DELETE" });
-    setProperties((prev) => prev.filter((p) => p.id !== id));
-    if (selected === id) setSelected(null);
+    const res = await fetch(`/api/properties/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setProperties((prev) => prev.filter((p) => p.id !== id));
+      if (selected === id) setSelected(null);
+    }
   }
 
   function handleSelect(id: string) {
@@ -196,7 +206,7 @@ export default function HomeClient({ initialProperties }: Props) {
       </header>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
 
         <aside className={`
           flex flex-col bg-white border-r border-slate-200 overflow-hidden
@@ -228,24 +238,7 @@ export default function HomeClient({ initialProperties }: Props) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3 pb-20 md:pb-3">
-            {isEmpty ? (
-              <div className="flex flex-col items-center justify-center h-full text-center py-12 px-4">
-                <div className="text-5xl mb-4">&#127960;</div>
-                <div className="font-semibold text-slate-700 text-base">Aucun bien pour l&apos;instant</div>
-                <div className="text-sm text-slate-400 mt-1 mb-6">Ajoute un bien ou charge des exemples</div>
-                <button onClick={handleSeed} disabled={seeding}
-                  className="bg-slate-900 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
-                  {seeding ? "Chargement…" : "Voir 5 exemples"}
-                </button>
-                {seedError && (
-                  <div className="mt-2 text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{seedError}</div>
-                )}
-                <button onClick={() => setShowUpload(true)}
-                  className="mt-2 text-sm text-slate-400 hover:text-slate-600 underline underline-offset-2">
-                  + Ajouter un vrai bien
-                </button>
-              </div>
-            ) : sorted.length === 0 ? (
+            {isEmpty ? null : sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-12">
                 <div className="text-4xl mb-3">&#128269;</div>
                 <div className="font-semibold text-slate-700">Aucun bien dans ce filtre</div>
@@ -256,6 +249,7 @@ export default function HomeClient({ initialProperties }: Props) {
                   <PropertyCard
                     property={p}
                     selected={selected === p.id}
+                    voting={votingId === p.id}
                     onSelect={() => handleSelect(p.id)}
                     onVote={(user, value) => handleVote(p.id, user, value)}
                     onDelete={() => handleDelete(p.id)}
@@ -267,18 +261,19 @@ export default function HomeClient({ initialProperties }: Props) {
         </aside>
 
         <main className={`flex-1 relative ${mobileTab === "map" ? "flex w-full" : "hidden md:flex"}`}>
-          {isEmpty ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50">
-              <div className="text-center px-6">
-                <div className="text-5xl mb-4">&#128506;</div>
-                <div className="font-semibold text-slate-600">La carte apparaitra ici</div>
-                <div className="text-slate-400 text-sm mt-1">Ajoute un bien pour voir les epingles</div>
-              </div>
-            </div>
-          ) : (
+          {!isEmpty && (
             <Map properties={properties} selected={selected} onSelect={handleSelect} />
           )}
         </main>
+
+        {isEmpty && (
+          <WelcomePath
+            seeding={seeding}
+            seedError={seedError}
+            onSeed={handleSeed}
+            onAdd={() => setShowUpload(true)}
+          />
+        )}
       </div>
 
       {/* ── Mobile bottom nav ── */}

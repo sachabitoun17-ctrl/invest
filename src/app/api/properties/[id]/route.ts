@@ -16,15 +16,27 @@ export async function GET(
   return NextResponse.json(property);
 }
 
+const PATCHABLE_FIELDS = new Set([
+  "address", "city", "postalCode", "lat", "lng", "surface", "rooms", "floor",
+  "type", "price", "notaryFees", "renovMin", "renovMax", "rentMin", "rentMax",
+  "strategy", "marketPriceM2", "dpe", "transport", "description",
+]);
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const body = await req.json();
+  const raw = await req.json();
+  const data = Object.fromEntries(
+    Object.entries(raw).filter(([k]) => PATCHABLE_FIELDS.has(k))
+  );
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No valid fields" }, { status: 400 });
+  }
   const property = await prisma.property.update({
     where: { id },
-    data: body,
+    data,
     include: { votes: true },
   });
   return NextResponse.json(property);

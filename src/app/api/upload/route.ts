@@ -65,10 +65,20 @@ export async function POST(req: NextRequest) {
     let pdfName: string | undefined;
 
     if (file) {
+      if (file.size > 15 * 1024 * 1024) {
+        return NextResponse.json({ error: "PDF trop volumineux (max 15 Mo)" }, { status: 400 });
+      }
       const bytes = await file.arrayBuffer();
       pdfName = file.name;
       extracted = await extractFromPdf(Buffer.from(bytes));
     } else if (url) {
+      let parsed: URL;
+      try { parsed = new URL(url); } catch {
+        return NextResponse.json({ error: "URL invalide" }, { status: 400 });
+      }
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return NextResponse.json({ error: "Protocole non autorisé" }, { status: 400 });
+      }
       extracted = await extractFromUrl(url);
     } else if (manualText) {
       extracted = extractFromText(manualText);

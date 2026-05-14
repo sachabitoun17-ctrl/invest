@@ -44,12 +44,13 @@ function ScoreRing({ score }: { score: number }) {
 interface Props {
   property: PropertyWithVotes;
   selected: boolean;
+  voting?: boolean;
   onSelect: () => void;
   onVote: (user: User, value: "yes" | "no" | "maybe") => void;
   onDelete: () => void;
 }
 
-export default function PropertyCard({ property: p, selected, onSelect, onVote, onDelete }: Props) {
+export default function PropertyCard({ property: p, selected, voting, onSelect, onVote, onDelete }: Props) {
   const m = computeMetrics(p);
 
   return (
@@ -162,7 +163,7 @@ export default function PropertyCard({ property: p, selected, onSelect, onVote, 
 
       {/* ── Votes ── */}
       <div
-        className="px-3 pb-3 pt-2 border-t border-slate-100 flex items-center gap-2"
+        className={`px-3 pb-3 pt-2 border-t border-slate-100 flex items-center gap-2 transition-opacity ${voting ? "opacity-50 pointer-events-none" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         {USERS.map((user) => {
@@ -178,6 +179,8 @@ export default function PropertyCard({ property: p, selected, onSelect, onVote, 
                   <button
                     key={v}
                     onClick={() => onVote(user, v)}
+                    aria-label={`${user} vote ${v === "yes" ? "oui" : v === "no" ? "non" : "peut-être"}`}
+                    aria-pressed={vote?.value === v}
                     className={`w-7 h-7 rounded-md text-xs font-bold transition-all ${
                       vote?.value === v ? VOTE_ACTIVE[v] : VOTE_IDLE[v]
                     }`}
@@ -192,6 +195,7 @@ export default function PropertyCard({ property: p, selected, onSelect, onVote, 
 
         <button
           onClick={onDelete}
+          aria-label="Supprimer ce bien"
           className="ml-1 w-7 h-7 flex items-center justify-center text-slate-300 hover:text-red-400 hover:bg-red-50 rounded-md transition-all text-lg leading-none"
         >
           ×
